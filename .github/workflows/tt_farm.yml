@@ -33,8 +33,14 @@ jobs:
 
       - name: Install deps
         run: |
-          python -m pip install --quiet camoufox
+          python -m pip install --quiet --upgrade pip
+          python -m pip install --quiet camoufox[geoip] playwright
+
+      - name: Fetch browser
+        run: |
           python -m camoufox fetch
+          echo "--- cek cache ---"
+          ls -la ~/.cache/camoufox/ 2>/dev/null | head -10
 
       - name: IP check
         run: curl -s https://ipv4.icanhazip.com
@@ -43,8 +49,11 @@ jobs:
         env:
           HEADLESS: ${{ github.event.inputs.headless }}
         run: |
+          # pastikan browser ada (fetch idempoten)
+          python -m camoufox fetch || true
           python3 tt_gh_farm.py 1 || true
-          ls -la akun_full.txt 2>/dev/null || true
+          echo "=== hasil ==="
+          cat akun_full.txt 2>/dev/null || echo "(kosong)"
 
       - name: Upload hasil
         if: always()
