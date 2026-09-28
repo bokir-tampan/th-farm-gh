@@ -1,0 +1,56 @@
+name: tt farm
+
+on:
+  workflow_dispatch:
+    inputs:
+      accounts:
+        description: 'Jumlah akun (1 akun = 1 runner = 1 IP)'
+        required: true
+        default: '1'
+      headless:
+        description: 'Headless (1=ya)'
+        required: false
+        default: '1'
+
+permissions:
+  contents: read
+
+jobs:
+  farm:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        index: [1, 2, 3, 4, 5]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install deps
+        run: |
+          python -m pip install --quiet camoufox
+          python -m camoufox fetch
+
+      - name: IP check
+        run: curl -s https://ipv4.icanhazip.com
+
+      - name: Farm
+        env:
+          HEADLESS: ${{ github.event.inputs.headless }}
+        run: |
+          python3 tt_gh_farm.py 1 || true
+          ls -la akun_full.txt 2>/dev/null || true
+
+      - name: Upload hasil
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tt-key-${{ matrix.index }}
+          path: akun_full.txt
+          if-no-files-found: warn
+          retention-days: 3
