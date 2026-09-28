@@ -1,0 +1,23 @@
+name: emailnator probe
+on:
+  workflow_dispatch:
+jobs:
+  p:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install
+        run: |
+          python -m pip install --quiet "camoufox[geoip]" curl_cffi
+          python -m camoufox fetch
+      - name: Probe
+        working-directory: grok-farm
+        run: python emailnator_probe.py 2>&1 | tee en.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: en-probe
+          path: grok-farm/en.log
