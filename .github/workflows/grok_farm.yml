@@ -52,7 +52,7 @@ jobs:
           PROXY_IN: ${{ github.event.inputs.proxy }}
           N: ${{ github.event.inputs.accounts }}
         run: |
-          ARGS="--no-install --mail=mailtm"
+          ARGS="--no-install --mail=mailcx"
           if [ -n "${PROXY_IN}" ]; then ARGS="$ARGS --proxy ${PROXY_IN}"; fi
           timeout 900 python grok.py "${N:-1}" $ARGS 2>&1 | tee grok.log || true
 

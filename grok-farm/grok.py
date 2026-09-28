@@ -57,7 +57,7 @@ PROXY        = ''
 TEMPIK_API   = ''  # tidak dipakai: inbox = *@arxpays.my.id, OTP lewat Gmail IMAP
 TEMPIK_DOM   = ''  # domain di tempik_client.py (DOMAIN)
 # Backend inbox: 'mailtm' (gratis via API, tanpa domain/Gmail) atau 'tempik'
-MAIL_BACKEND = 'mailtm'
+MAIL_BACKEND = 'mailcx'
 PASSWORD     = ''          # kosong = password unik per akun
 HEADLESS     = True         # jendela tidak muncul, proses tetap jalan di belakang
 # Satu browser per proses. Dua browser di satu IP saling bunuh Turnstile.
@@ -953,10 +953,15 @@ def ask_count():
 
 
 async def run(count=1):
-    # Pilih mail backend: --mail=mailtm (default) atau tempik (domain catch-all+Gmail)
+    # Pilih mail backend: mailtm | mailcx | tempik
     if MAIL_BACKEND == 'tempik':
         from tempik_client import Tempik
         mail = Tempik(TEMPIK_API, TEMPIK_DOM)
+    elif MAIL_BACKEND == 'mailcx':
+        from mailcx_client import MailCxClient
+        mail = MailCxClient(TEMPIK_DOM)
+        _orig_create = mail.create_mailbox
+        mail.create_mailbox = lambda: _orig_create()[0]   # grok.py mau string
     else:
         from mail_tm_client import MailTm
         mail = MailTm(TEMPIK_API, TEMPIK_DOM)
