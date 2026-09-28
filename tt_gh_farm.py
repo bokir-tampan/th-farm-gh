@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
 """
-TokenTable farm via Camoufox (jalan di GitHub runner: RAM besar + IP fresh).
+TokenTable farm via Camoufox (GitHub runner: RAM besar + IP fresh).
 
 Alur:
-  1. Buka /en/chat → tunggu widget Cloudflare Turnstile auto-solve
-  2. Ambil token dari input[name=cf-turnstile-response]
-  3. Register via fetch SAME-ORIGIN di dalam page (cookie + header natural)
-  4. Login → generate API key
-  5. Print  email:password:apikey  ke akun_full.txt
+  1. Buka /en/chat
+  2. Buka modal auth (klik Sign In / Get Started Free) supaya widget Turnstile VISIBLE
+  3. Tunggu Turnstile auto-solve; kalau perlu, klik widget (mode managed)
+  4. Register via fetch same-origin di dalam page
+  5. Login → generate API key
+  6. Tulis  email:password:apikey  ke akun_full.txt
 
-Usage: python3 tt_gh_farm.py [N]     (N = jumlah akun, default 1)
+Usage: python3 tt_gh_farm.py [N]
 """
 import sys, os, time, json, random, string, re
 
@@ -19,9 +20,10 @@ BASE = "https://tokentable.asia"
 CHAT = BASE + "/en/chat"
 OUT = "akun_full.txt"
 
+SEL_INPUT = "[name=cf-turnstile-response]"
+
 
 def rnd_email():
-    """Email acak — pakai domain yang tidak diblokir (gmail/outlook)."""
     tag = "".join(random.choices(string.ascii_lowercase + string.digits, k=12))
     dom = random.choice(["gmail.com", "outlook.com", "yahoo.com", "hotmail.com"])
     return f"{tag}@{dom}"
@@ -31,23 +33,106 @@ def rnd_password():
     return "Tt!" + "".join(random.choices(string.ascii_letters + string.digits, k=12)) + "#26"
 
 
-def solve_turnstile(page, timeout=150):
-    """Tunggu token Turnstile terisi otomatis. Return token atau None."""
-    deadline = time.time() + timeout
-    while time.time() < deadline:
+def widget_info(page):
+    """Return dict: count, visible, rect."""
+    return page.evaluate("""() => {
+      const els = [...document.querySelectorAll('*')].filter(e => /cf-turnstile/.test(e.className||''));
+      const inp = document.querySelector('[name=cf-turnstile-response]');
+      let r = null, vis = false;
+      const target = els[0] || (inp ? inp.parentElement : null);
+      if (target) {
+        const b = target.getBoundingClientRect();
+        r = {x: Math.round(b.x), y: Math.round(b.y), w: Math.round(b.width), h: Math.round(b.height)};
+        vis = !!(target.offsetParent !== null) && b.width > 0 && b.height > 0;
+      }
+      return {count: els.length, hasInput: !!inp, visible: vis, rect: r};
+    }""")
+
+
+def token_now(page):
+    try:
+        return page.evaluate(
+            f"(document.querySelector('{SEL_INPUT}')||{{}}).value||''")
+    except Exception:
+        return ""
+
+
+def open_auth_modal(page):
+    """Klik CTA supaya form auth + Turnstile kebuka (visible)."""
+    # tutup overlay cookie kalau ada
+    try:
+        page.evaluate("""() => {
+          document.querySelectorAll('div,iframe').forEach(e=>{
+            const t=((e.id||'')+' '+(e.className||'')).toLowerCase();
+            if(/cookie|consent|gdpr|privacy/.test(t)){try{e.style.display='none';}catch(_){}}
+          });
+        }""")
+    except Exception:
+        pass
+
+    clickables = page.evaluate("""() => {
+      const out=[];
+      document.querySelectorAll('button,a,[role=button]').forEach(e=>{
+        const t=(e.innerText||'').trim().replace(/\\s+/g,' ');
+        if(t && t.length<40){
+          const b=e.getBoundingClientRect();
+          out.push({t, x:Math.round(b.x+b.width/2), y:Math.round(b.y+b.height/2)});
+        }
+      });
+      return out;
+    }""")
+
+    wanted = [c for c in clickables
+              if re.search(r"get started free|sign in|start free|get started|sign up|signup",
+                           c["t"], re.I)]
+    print(f"    kandidat CTA: {[c['t'] for c in wanted][:8]}", flush=True)
+
+    for c in wanted:
         try:
-            tok = page.evaluate(
-                "(document.querySelector('[name=cf-turnstile-response]')||{}).value||''")
-            if tok and len(tok) > 40:
-                return tok
+            page.mouse.move(c["x"], c["y"], steps=random.randint(8, 20))
+            time.sleep(random.uniform(0.3, 0.9))
+            page.mouse.click(c["x"], c["y"])
+            time.sleep(4)
+            info = widget_info(page)
+            if info["visible"] or info["hasInput"]:
+                print(f"    klik '{c['t']}' -> widget visible={info['visible']}", flush=True)
+                return True
         except Exception as e:
-            print(f"   [warn] eval: {str(e)[:80]}", flush=True)
+            print(f"    klik err: {str(e)[:80]}", flush=True)
+    return False
+
+
+def solve_turnstile(page, timeout=180):
+    """Tunggu token; kalau mandek, klik widget (managed mode)."""
+    start = time.time()
+    clicked = False
+    while time.time() - start < timeout:
+        tok = token_now(page)
+        if len(tok) > 40:
+            return tok
+        info = widget_info(page)
+        elapsed = time.time() - start
+        print(f"    t={elapsed:.0f}s vis={info['visible']} rect={info['rect']} len={len(tok)}", flush=True)
+
+        # klik widget sekali setelah 20s (mode managed butuh interaksi)
+        if not clicked and elapsed > 20 and info["rect"]:
+            r = info["rect"]
+            try:
+                cx, cy = r["x"] + 30, r["y"] + r["h"] // 2
+                print(f"    coba klik widget di ({cx},{cy})", flush=True)
+                page.mouse.move(cx - 80, cy - 40, steps=25)
+                time.sleep(random.uniform(0.4, 1.0))
+                page.mouse.move(cx, cy, steps=18)
+                time.sleep(random.uniform(0.2, 0.6))
+                page.mouse.click(cx, cy)
+                clicked = True
+            except Exception as e:
+                print(f"    klik widget err: {str(e)[:80]}", flush=True)
         time.sleep(3)
-    return None
+    return ""
 
 
 def js_fetch(page, path, payload, method="POST"):
-    """fetch same-origin di dalam page — pakai cookie + header browser asli."""
     expr = """
     async ([path, method, payload]) => {
       try {
@@ -62,15 +147,14 @@ def js_fetch(page, path, payload, method="POST"):
       } catch (e) {
         return {status: -1, text: String(e).slice(0, 300)};
       }
-    }
-    """
+    }"""
     return page.evaluate(expr, [path, method, payload])
 
 
-def farm_one(headless=True):
+def farm_one(headless=True, keep_open=False):
     email = rnd_email()
     password = rnd_password()
-    print(f"[*] akun target: {email}", flush=True)
+    print(f"[*] target: {email}", flush=True)
 
     with Camoufox(headless=headless, humanize=True) as browser:
         page = browser.new_page()
@@ -78,30 +162,31 @@ def farm_one(headless=True):
         page.goto(CHAT, wait_until="domcontentloaded", timeout=120000)
         time.sleep(6)
 
-        # cek widget turnstile ada
-        n = page.evaluate("document.querySelectorAll('[name=cf-turnstile-response]').length")
-        print(f"    widget turnstile: {n}", flush=True)
-        if not n:
-            # coba klik tombol untuk munculin form
-            for lbl in ["Get Started Free", "Sign In", "Start Free", "Get Started"]:
-                try:
-                    page.get_by_text(lbl, exact=False).first.click(timeout=4000)
-                    time.sleep(4)
-                    if page.evaluate("document.querySelectorAll('[name=cf-turnstile-response]').length"):
-                        break
-                except Exception:
-                    pass
-            n = page.evaluate("document.querySelectorAll('[name=cf-turnstile-response]').length")
-            print(f"    widget turnstile (setelah klik): {n}", flush=True)
+        print("[2] buka modal auth ...", flush=True)
+        open_auth_modal(page)
+        time.sleep(3)
+        info = widget_info(page)
+        print(f"    widget: {info}", flush=True)
+        if not info["hasInput"]:
+            print("    [!] input turnstile tidak ada", flush=True)
+            if keep_open:
+                time.sleep(600)
+            return None
 
-        print("[2] tunggu Turnstile auto-solve (max 150s) ...", flush=True)
+        print("[3] tunggu Turnstile ...", flush=True)
         token = solve_turnstile(page)
         if not token:
-            print("    [!] token kosong — Turnstile tidak auto-solve", flush=True)
+            print("    [!] token kosong", flush=True)
+            try:
+                open("/tmp/tt_debug.html", "w").write(page.content())
+            except Exception:
+                pass
+            if keep_open:
+                time.sleep(600)
             return None
-        print(f"    token OK ({len(token)} chars): {token[:40]}...", flush=True)
+        print(f"    TOKEN OK ({len(token)}) {token[:40]}...", flush=True)
 
-        print("[3] register ...", flush=True)
+        print("[4] register ...", flush=True)
         r = js_fetch(page, "/auth/register", {
             "email": email, "password": password,
             "name": email.split("@")[0], "turnstileToken": token,
@@ -109,24 +194,25 @@ def farm_one(headless=True):
         print(f"    -> {r['status']}: {r['text'][:300]}", flush=True)
 
         if r["status"] not in (200, 201):
-            # coba path alternatif
-            r = js_fetch(page, "/api/auth/register", {
-                "email": email, "password": password,
-                "name": email.split("@")[0], "turnstileToken": token,
+            r2 = js_fetch(page, "/auth/register", {
+                "email": email, "password": password, "name": email.split("@")[0],
+                "turnstileToken": token, "captchaToken": token,
             })
-            print(f"    alt -> {r['status']}: {r['text'][:300]}", flush=True)
-            if r["status"] not in (200, 201):
+            print(f"    retry -> {r2['status']}: {r2['text'][:300]}", flush=True)
+            if r2["status"] not in (200, 201):
                 return None
 
-        print("[4] login ...", flush=True)
+        print("[5] login ...", flush=True)
         rl = js_fetch(page, "/auth/login", {"email": email, "password": password})
         print(f"    -> {rl['status']}: {rl['text'][:250]}", flush=True)
 
-        print("[5] generate api key ...", flush=True)
+        print("[6] api key ...", flush=True)
         key = None
-        for ep in ["/api/account/apikey", "/api/account/api-key", "/api/keys"]:
-            rk = js_fetch(page, ep, {"name": "farm"})
-            print(f"    {ep} -> {rk['status']}: {rk['text'][:250]}", flush=True)
+        for ep, body in [("/api/account/apikey", {"name": "farm"}),
+                         ("/api/account/api-key", {"name": "farm"}),
+                         ("/api/keys", {"name": "farm"})]:
+            rk = js_fetch(page, ep, body)
+            print(f"    {ep} -> {rk['status']}: {rk['text'][:220]}", flush=True)
             if rk["status"] in (200, 201):
                 try:
                     d = json.loads(rk["text"])
@@ -138,10 +224,6 @@ def farm_one(headless=True):
                         key = m.group(1)
                 if key:
                     break
-        if key:
-            print(f"    KEY: {key[:20]}...", flush=True)
-        else:
-            print("    [!] api key tidak didapat", flush=True)
 
         line = f"{email}:{password}:{key or ''}"
         with open(OUT, "a") as f:
@@ -153,14 +235,15 @@ def farm_one(headless=True):
 def main():
     N = int(sys.argv[1]) if len(sys.argv) > 1 else 1
     headless = os.environ.get("HEADLESS", "1") == "1"
+    keep = os.environ.get("KEEP_OPEN", "0") == "1"
     ok = 0
     for i in range(N):
         print(f"\n===== akun {i+1}/{N} =====", flush=True)
         try:
-            if farm_one(headless=headless):
+            if farm_one(headless=headless, keep_open=keep):
                 ok += 1
         except Exception as e:
-            print(f"[!] error: {str(e)[:200]}", flush=True)
+            print(f"[!] error: {str(e)[:250]}", flush=True)
         if i < N - 1:
             time.sleep(random.randint(5, 12))
     print(f"\n=== HASIL: {ok}/{N} sukses ===", flush=True)
