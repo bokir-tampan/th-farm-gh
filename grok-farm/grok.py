@@ -57,7 +57,7 @@ PROXY        = ''
 TEMPIK_API   = ''  # tidak dipakai: inbox = *@arxpays.my.id, OTP lewat Gmail IMAP
 TEMPIK_DOM   = ''  # domain di tempik_client.py (DOMAIN)
 # Backend inbox: 'mailtm' (gratis via API, tanpa domain/Gmail) atau 'tempik'
-MAIL_BACKEND = 'mailcx'
+MAIL_BACKEND = 'emailnator'
 PASSWORD     = ''          # kosong = password unik per akun
 HEADLESS     = True         # jendela tidak muncul, proses tetap jalan di belakang
 # Satu browser per proses. Dua browser di satu IP saling bunuh Turnstile.
@@ -957,6 +957,9 @@ async def run(count=1):
     if MAIL_BACKEND == 'tempik':
         from tempik_client import Tempik
         mail = Tempik(TEMPIK_API, TEMPIK_DOM)
+    elif MAIL_BACKEND == 'emailnator':
+        from emailnator_client import Emailnator
+        mail = Emailnator(TEMPIK_API, TEMPIK_DOM)
     elif MAIL_BACKEND == 'gmail_dot':
         from gmail_dot_client import GmailDot
         mail = GmailDot(TEMPIK_API, TEMPIK_DOM)
