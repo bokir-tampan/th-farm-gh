@@ -1,0 +1,111 @@
+name: arx github farm
+
+on:
+  workflow_dispatch:
+    inputs:
+      accounts:
+        description: 'Jumlah akun per runner'
+        required: true
+        default: '1'
+      mail:
+        description: 'Mail provider (mailcx|gmail_dot)'
+        required: false
+        default: 'mailcx'
+      gmail_address:
+        description: 'Gmail (kalau gmail_dot)'
+        required: false
+        default: ''
+      gmail_app_password:
+        description: 'Gmail App Password (kalau gmail_dot)'
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+jobs:
+  farm:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        index: [1, 2, 3, 4, 5]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install deps
+        run: |
+          python -m pip install --quiet --upgrade pip
+          python -m pip install --quiet -r arx-github/requirements.txt
+
+      - name: Fetch Camoufox
+        run: python -m camoufox fetch
+
+      - name: IP check
+        run: |
+          echo "egress IP:"; curl -s https://ipv4.icanhazip.com
+          curl -s https://ipinfo.io/json | head -c 400 || true
+          echo
+
+      - name: Configure
+        working-directory: arx-github
+        env:
+          MAIL: ${{ github.event.inputs.mail }}
+          GMAIL_ADDR: ${{ github.event.inputs.gmail_address }}
+          GMAIL_PW: ${{ github.event.inputs.gmail_app_password }}
+        run: |
+          python - <<'PY'
+          import json, os
+          cfg = {
+            "mail_provider": os.environ.get("MAIL") or "mailcx",
+            "mailcx_domain": "",
+            "gmail_address": os.environ.get("GMAIL_ADDR",""),
+            "gmail_app_password": os.environ.get("GMAIL_PW",""),
+            "register_count": 1,
+            "proxy": "",
+            "proxy_file": "",
+            "headless": True,
+            "delay_sec": 12,
+            "fresh_profile": True,
+            "create_repo": True,
+            "repo_name": "hello",
+            "enable_2fa": True,
+            "set_profile_status": False,
+            "complete_profile": False,
+          }
+          open("config.json","w").write(json.dumps(cfg, indent=2))
+          print("config written")
+          PY
+
+      - name: Farm
+        working-directory: arx-github
+        env:
+          N: ${{ github.event.inputs.accounts }}
+        run: |
+          timeout 900 python main.py --headless --count "${N:-1}" 2>&1 | tee farm.log || true
+          echo "=== exit: $? ==="
+
+      - name: Show result
+        if: always()
+        working-directory: arx-github
+        run: |
+          echo "=== log tail ==="
+          tail -40 farm.log 2>/dev/null || true
+          echo "=== accounts ==="
+          find accounts -type f 2>/dev/null | head
+          cat accounts/*.txt 2>/dev/null || echo "(kosong)"
+
+      - name: Upload
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: arx-gh-${{ matrix.index }}
+          path: arx-github/accounts/
+          if-no-files-found: warn
+          retention-days: 3

@@ -1,0 +1,23 @@
+{
+  "name": "github-regkit-frontend",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "verify:ui": "node verify-ui.cjs",
+    "verify:clicks": "node verify-clicks.cjs"
+  },
+  "dependencies": {
+    "lucide-react": "^1.33.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.4",
+    "playwright": "^1.63.0",
+    "vite": "^5.4.11"
+  }
+}
