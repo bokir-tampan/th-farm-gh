@@ -15,6 +15,10 @@ on:
         description: 'Proxy (kosong = direct)'
         required: false
         default: ''
+      mail:
+        description: 'Backend inbox: mailcx | mailtm | gmail_dot | tempik'
+        required: false
+        default: 'mailcx'
 
 permissions:
   contents: read
@@ -51,8 +55,11 @@ jobs:
         env:
           PROXY_IN: ${{ github.event.inputs.proxy }}
           N: ${{ github.event.inputs.accounts }}
+          MAIL_BACKEND: ${{ github.event.inputs.mail || 'mailcx' }}
+          GROK_GMAIL: ${{ secrets.GROK_GMAIL }}
+          GROK_GMAIL_PW: ${{ secrets.GROK_GMAIL_PW }}
         run: |
-          ARGS="--no-install --mail=mailcx"
+          ARGS="--no-install --mail=${MAIL_BACKEND:-mailcx}"
           if [ -n "${PROXY_IN}" ]; then ARGS="$ARGS --proxy ${PROXY_IN}"; fi
           timeout 900 python grok.py "${N:-1}" $ARGS 2>&1 | tee grok.log || true
 

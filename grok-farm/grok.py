@@ -957,6 +957,9 @@ async def run(count=1):
     if MAIL_BACKEND == 'tempik':
         from tempik_client import Tempik
         mail = Tempik(TEMPIK_API, TEMPIK_DOM)
+    elif MAIL_BACKEND == 'gmail_dot':
+        from gmail_dot_client import GmailDot
+        mail = GmailDot(TEMPIK_API, TEMPIK_DOM)
     elif MAIL_BACKEND == 'mailcx':
         from mailcx_client import MailCxClient
         mail = MailCxClient(TEMPIK_DOM)
