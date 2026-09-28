@@ -713,7 +713,10 @@ async def signup_one(mail):
 
         if not await spin_wait('Menunggu layar OTP...', _otp_screen, 15, 0.4):
             otp_task.cancel()
-            raise RuntimeError("email submit not confirmed (no OTP screen)")
+            _dbg = await _body_text(page)
+            print(f"  {DIM}[debug] url={page.url}{RST}", flush=True)
+            print(f"  {DIM}[debug] body={_dbg[:500]!r}{RST}", flush=True)
+            raise RuntimeError(f"email submit not confirmed (no OTP screen) | {_dbg[:200]!r}")
         ok("verification code requested")
         if sniffed.get('castle'):
             ok(f"castle token sniffed ({len(sniffed['castle'])} chars)")
