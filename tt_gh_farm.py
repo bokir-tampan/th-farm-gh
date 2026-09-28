@@ -132,23 +132,25 @@ def solve_turnstile(page, timeout=180):
     return ""
 
 
-def js_fetch(page, path, payload, method="POST"):
+def js_fetch(page, path, payload, method="POST", bearer=None):
     expr = """
-    async ([path, method, payload]) => {
+    async ([path, method, payload, bearer]) => {
       try {
+        const h = {'Content-Type': 'application/json'};
+        if (bearer) h['Authorization'] = 'Bearer ' + bearer;
         const r = await fetch(path, {
           method: method,
-          headers: {'Content-Type': 'application/json'},
+          headers: h,
           body: payload ? JSON.stringify(payload) : undefined,
           credentials: 'include'
         });
         const text = await r.text();
-        return {status: r.status, text: text.slice(0, 1200)};
+        return {status: r.status, text: text.slice(0, 4000)};
       } catch (e) {
         return {status: -1, text: String(e).slice(0, 300)};
       }
     }"""
-    return page.evaluate(expr, [path, method, payload])
+    return page.evaluate(expr, [path, method, payload, bearer])
 
 
 def farm_one(headless=True, keep_open=False):
@@ -204,26 +206,60 @@ def farm_one(headless=True, keep_open=False):
 
         print("[5] login ...", flush=True)
         rl = js_fetch(page, "/auth/login", {"email": email, "password": password})
-        print(f"    -> {rl['status']}: {rl['text'][:250]}", flush=True)
+        print(f"    -> {rl['status']}: {rl['text'][:400]}", flush=True)
 
-        print("[6] api key ...", flush=True)
+        auth_token = None
         key = None
-        for ep, body in [("/api/account/apikey", {"name": "farm"}),
-                         ("/api/account/api-key", {"name": "farm"}),
-                         ("/api/keys", {"name": "farm"})]:
-            rk = js_fetch(page, ep, body)
-            print(f"    {ep} -> {rk['status']}: {rk['text'][:220]}", flush=True)
-            if rk["status"] in (200, 201):
-                try:
-                    d = json.loads(rk["text"])
-                    key = (d.get("key") or d.get("apiKey") or d.get("api_key")
-                           or (d.get("data") or {}).get("key"))
-                except Exception:
-                    m = re.search(r'(tt[-_][A-Za-z0-9]{16,}|sk[-_][A-Za-z0-9]{16,})', rk["text"])
-                    if m:
-                        key = m.group(1)
-                if key:
-                    break
+
+        # 1. coba ambil apiKey langsung dari response login
+        try:
+            d = json.loads(rl["text"])
+            auth_token = d.get("token")
+            key = (d.get("user") or {}).get("apiKey")
+            print(f"    login token={bool(auth_token)} apiKey={bool(key)}", flush=True)
+        except Exception as e:
+            print(f"    parse login err: {str(e)[:80]}", flush=True)
+
+        # 2. kalau apiKey belum ada: GET /api/account pakai Bearer
+        if not key and auth_token:
+            print("[6a] GET /api/account ...", flush=True)
+            ra = js_fetch(page, "/api/account", None, method="GET", bearer=auth_token)
+            print(f"    -> {ra['status']}: {ra['text'][:500]}", flush=True)
+            try:
+                d = json.loads(ra["text"])
+                key = d.get("apiKey") or (d.get("user") or {}).get("apiKey")
+            except Exception:
+                m = re.search(r'"(tt-(?:live|web)-[A-Za-z0-9_-]+)"', ra["text"])
+                if m:
+                    key = m.group(1)
+
+        # 3. fallback: endpoint generate key
+        if not key:
+            print("[6b] cari endpoint generate key ...", flush=True)
+            for ep, body, meth in [("/api/account/apikey", {"name": "farm"}, "POST"),
+                                   ("/api/account/api-key", {"name": "farm"}, "POST"),
+                                   ("/api/account/keys", {}, "POST"),
+                                   ("/api/account/api-keys", {}, "POST")]:
+                rk = js_fetch(page, ep, body, method=meth, bearer=auth_token)
+                print(f"    {ep} -> {rk['status']}: {rk['text'][:300]}", flush=True)
+                if rk["status"] in (200, 201):
+                    try:
+                        d = json.loads(rk["text"])
+                        key = (d.get("key") or d.get("apiKey") or d.get("api_key")
+                               or (d.get("data") or {}).get("key") or (d.get("data") or {}).get("apiKey"))
+                    except Exception:
+                        pass
+                    if not key:
+                        m = re.search(r'"(tt-(?:live|web)-[A-Za-z0-9_-]+)"', rk["text"])
+                        if m:
+                            key = m.group(1)
+                    if key:
+                        break
+
+        if key:
+            print(f"    KEY OK: {key[:22]}...", flush=True)
+        else:
+            print("    [!] api key tidak didapat", flush=True)
 
         line = f"{email}:{password}:{key or ''}"
         with open(OUT, "a") as f:
