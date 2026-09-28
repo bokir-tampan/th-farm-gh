@@ -1,0 +1,58 @@
+name: farm
+
+on:
+  workflow_dispatch:
+    inputs:
+      accounts:
+        description: 'Jumlah akun'
+        required: true
+        default: '5'
+
+permissions:
+  contents: read
+
+jobs:
+  farm:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        # default 5 paralel; dipakai untuk 1 akun = 1 job = 1 IP
+        index: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install requests
+        run: pip install --quiet requests
+
+      # split account indices berdasarkan total input
+      - name: Hitung jatah akun
+        id: quota
+        shell: bash
+        run: |
+          TOTAL="${{ github.event.inputs.accounts }}"
+          IDX="${{ matrix.index }}"
+          # kalau TOTAL < IDX, job ini skip
+          if [ "$TOTAL" -lt "$IDX" ]; then
+            echo "skip=1" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Farm akun
+        if: steps.quota.outputs.skip != '1'
+        run: |
+          python3 th_farm.py 1 --quiet
+
+      - name: Upload hasil
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: key-${{ matrix.index }}
+          path: |
+            akun.txt
+            akun_full.txt
+          if-no-files-found: warn
