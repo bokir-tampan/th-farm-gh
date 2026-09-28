@@ -42,30 +42,44 @@ class Tempik:
             + '@' + self.domain
 
     def wait_otp(self, addr, timeout=90, since=None):
-        """Poll IMAP, ambil OTP dari email yang To-nya persis alamat ini."""
+        """Poll IMAP, ambil OTP dari email yang To-nya persis alamat ini.
+
+        Scan INBOX **dan Spam**: Gmail menaruh OTP xAI di Spam saat pengirim
+        (accounts.x.ai) belum masuk whitelist penerima. Hanya scan INBOX =
+        OTP terlihat 'tidak pernah datang'.
+        """
         start = time.time()
+        _base = getattr(self, 'base_imap', ['INBOX', '[Gmail]/Spam'])
         while time.time() - start < timeout:
             M = None
             try:
                 M = imaplib.IMAP4_SSL('imap.gmail.com', 993)
                 M.login(self.GMAIL, self._PW)
-                M.select('INBOX')
-                _, data = M.search(None, 'UNSEEN')
-                for num in reversed((data[0] or b'').split()):
-                    _, msg = M.fetch(num, '(RFC822)')
-                    m = emailmod.message_from_bytes(msg[0][1])
-                    to = (m.get('To') or '') + (m.get('Delivered-To') or '') \
-                        + (m.get('X-Forwarded-To') or '')
-                    if addr.lower() not in to.lower():
+                for _box in _base:
+                    try:
+                        typ, _ = M.select(f'"{_box}"', readonly=False)
+                        if typ != 'OK':
+                            continue
+                    except Exception:
                         continue
-                    body = ''
-                    for part in m.walk():
-                        if part.get_content_type() in ('text/plain', 'text/html'):
-                            body += part.get_payload(decode=True).decode('utf-8', 'replace')
-                    code = extract_otp(m.get('Subject'), body)
-                    if code:
-                        M.store(num, '+FLAGS', '\\Seen')
-                        return code
+                    _, data = M.search(None, 'UNSEEN')
+                    for num in reversed((data[0] or b'').split()):
+                        _, msg = M.fetch(num, '(RFC822)')
+                        m = emailmod.message_from_bytes(msg[0][1])
+                        to = (m.get('To') or '') + (m.get('Delivered-To') or '') \
+                            + (m.get('X-Forwarded-To') or '')
+                        if addr.lower() not in to.lower():
+                            continue
+                        body = ''
+                        for part in m.walk():
+                            if part.get_content_type() in ('text/plain', 'text/html'):
+                                payload = part.get_payload(decode=True)
+                                if payload:
+                                    body += payload.decode('utf-8', 'replace')
+                        code = extract_otp(m.get('Subject'), body)
+                        if code:
+                            M.store(num, '+FLAGS', '\\Seen')
+                            return code
             except Exception:
                 pass
             finally:

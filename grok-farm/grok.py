@@ -56,6 +56,8 @@ if platform.system() == 'Windows':
 PROXY        = ''
 TEMPIK_API   = ''  # tidak dipakai: inbox = *@arxpays.my.id, OTP lewat Gmail IMAP
 TEMPIK_DOM   = ''  # domain di tempik_client.py (DOMAIN)
+# Backend inbox: 'mailtm' (gratis via API, tanpa domain/Gmail) atau 'tempik'
+MAIL_BACKEND = 'mailtm'
 PASSWORD     = ''          # kosong = password unik per akun
 HEADLESS     = True         # jendela tidak muncul, proses tetap jalan di belakang
 # Satu browser per proses. Dua browser di satu IP saling bunuh Turnstile.
@@ -948,14 +950,19 @@ def ask_count():
 
 
 async def run(count=1):
-    from tempik_client import Tempik
-    mail = Tempik(TEMPIK_API, TEMPIK_DOM)
+    # Pilih mail backend: --mail=mailtm (default) atau tempik (domain catch-all+Gmail)
+    if MAIL_BACKEND == 'tempik':
+        from tempik_client import Tempik
+        mail = Tempik(TEMPIK_API, TEMPIK_DOM)
+    else:
+        from mail_tm_client import MailTm
+        mail = MailTm(TEMPIK_API, TEMPIK_DOM)
 
     banner()
     host = PROXY.split('@')[-1] if '@' in (PROXY or '') else (
         PROXY if PROXY else 'DIRECT (no proxy)')
     print(f"  {CYN}proxy{RST}  : {host}")
-    print(f"  {CYN}inbox{RST}  : {TEMPIK_API}")
+    print(f"  {CYN}inbox{RST}  : {MAIL_BACKEND}")
     print(f"  {CYN}mode{RST}   : hybrid (browser = token, sisanya HTTP)")
     print(f"  {CYN}install{RST}: {'9Router grok-cli ✓' if INSTALL_9R else 'OFF (--no-install)'}")
     print(f"  {CYN}target{RST} : {BOLD}{count}{RST} account(s)\n", flush=True)
@@ -1032,6 +1039,12 @@ if __name__ == '__main__':
             PROXY = val
     else:
         PROXY = os.environ.get('GROK_PROXY', PROXY)
+
+    # --mail=mailtm | --mail=tempik
+    for a in list(args):
+        if a.startswith('--mail='):
+            globals()['MAIL_BACKEND'] = a.split('=', 1)[1].strip() or 'mailtm'
+            args.remove(a)
 
     if not args:
         n = ask_count()
