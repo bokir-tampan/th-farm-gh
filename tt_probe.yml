@@ -1,0 +1,21 @@
+name: tt probe
+on:
+  workflow_dispatch:
+    inputs:
+      email:
+        description: email
+        required: false
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          set -x
+          curl -s -o /dev/null -w "ip=%{remote_ip}\n" https://ipv4.icanhazip.com
+          # register dari IP GH
+          curl -s -w "\nregister=%{http_code}\n" -X POST https://tokentable.asia/auth/register \
+            -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36" \
+            -H "Content-Type: application/json" \
+            -H "Origin: https://tokentable.asia" \
+            -H "Referer: https://tokentable.asia/en/dashboard" \
+            -d '{"name":"boki","email":"probe_gh_'"$RANDOM"'@ex.com","password":"B0kir!2026x"}' | head -c 300
