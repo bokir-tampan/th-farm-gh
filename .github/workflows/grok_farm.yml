@@ -1,0 +1,75 @@
+name: grok farm
+
+on:
+  workflow_dispatch:
+    inputs:
+      accounts:
+        description: 'Jumlah akun per runner'
+        required: true
+        default: '1'
+      install_9r:
+        description: 'Install ke 9Router (0/1)'
+        required: false
+        default: '0'
+      proxy:
+        description: 'Proxy (kosong = direct)'
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+jobs:
+  farm:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        index: [1, 2, 3, 4, 5]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install deps
+        run: |
+          python -m pip install --quiet --upgrade pip
+          python -m pip install --quiet "camoufox[geoip]" curl_cffi
+
+      - name: Fetch Camoufox
+        run: python -m camoufox fetch
+
+      - name: IP check
+        run: curl -s https://ipv4.icanhazip.com; echo
+
+      - name: Farm
+        working-directory: grok-farm
+        env:
+          PROXY_IN: ${{ github.event.inputs.proxy }}
+          N: ${{ github.event.inputs.accounts }}
+        run: |
+          ARGS="--no-install"
+          if [ -n "${PROXY_IN}" ]; then ARGS="$ARGS --proxy ${PROXY_IN}"; fi
+          timeout 900 python grok.py "${N:-1}" $ARGS 2>&1 | tee grok.log || true
+
+      - name: Show result
+        if: always()
+        working-directory: grok-farm
+        run: |
+          echo "=== tail log ==="
+          tail -50 grok.log 2>/dev/null || true
+          echo "=== sso.txt ==="
+          wc -l sso.txt 2>/dev/null || echo "(kosong)"
+
+      - name: Upload
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: grok-sso-${{ matrix.index }}
+          path: grok-farm/sso.txt
+          if-no-files-found: warn
+          retention-days: 3
