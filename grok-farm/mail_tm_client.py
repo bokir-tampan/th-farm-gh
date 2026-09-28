@@ -79,7 +79,7 @@ class MailTm:
             raise RuntimeError(f"mail.tm create failed {r.status_code}: {r.text[:150]}")
         self._creds[addr] = pw
         self._login(addr)
-        return addr, addr
+        return addr
 
     def wait_otp(self, addr, timeout=90, since=None):
         start = time.time()
@@ -121,6 +121,6 @@ if __name__ == '__main__':
     assert extract_otp('SpaceXAI confirmation code: 699-696', '') == '699696'
     assert extract_otp('', 'color:#333333') == ''
     m = MailTm()
-    a, _ = m.create_inbox()
+    a = m.create_inbox()
     print('self-check ok', a)
-    assert a.split('@')[1]
+    assert isinstance(a, str) and '@' in a
