@@ -23,6 +23,7 @@ import threading
 import time
 
 _OTP_RE = re.compile(r'code[^0-9]{0,25}(\d{3}[-\s]?\d{3})', re.I)
+GOOGLEMAIL = 8      # EMAIL_TYPES["googleMail"] dari chunk JS emailnator
 
 
 def extract_otp(subject, body):
@@ -93,19 +94,19 @@ class Emailnator:
 
     # ── API ────────────────────────────────────────────────────
     async def _create(self):
-        r = await self._api("/api/generate-email",
-                            {"email": ["domain", "plusGmail", "dotGmail",
-                                       "googleMail"]})
+        r = await self._api("/api/generate-email", {"ids": [GOOGLEMAIL]})
         addr = ""
         try:
-            addr = (json.loads(r.get("body") or "{}").get("email") or "")
+            j = json.loads(r.get("body") or "{}")
+            addr = (j.get("email") or j.get("address") or "")
         except Exception:
             pass
         if not addr:
+            # fallback: alamat dirender di DOM (API 503 dari IP datacenter)
             try:
                 addr = await self._page.evaluate(
                     """() => { const m = document.body.innerText.match(
-                        /[\\w.\\-+]+@[\\w.\\-]+\\.\\w+/); return m ? m[0] : ''; }""")
+                        /[\\w.\\-+]+@(googlemail|gmail)\\.com/); return m ? m[0] : ''; }""")
             except Exception:
                 pass
         if not addr:
@@ -116,28 +117,28 @@ class Emailnator:
     async def _wait(self, addr, timeout):
         start = time.time()
         while time.time() - start < timeout:
-            r = await self._api("/api/message-list", {"email": addr})
-            ids = []
+            r = await self._api("/api/message-list", {"email": addr, "limit": 20})
+            msgs = []
             try:
-                for m in (json.loads(r.get("body") or "{}").get("messageData") or []):
-                    if m.get("messageID"):
-                        ids.append((m["messageID"], m.get("subject", "") or ""))
+                j = json.loads(r.get("body") or "{}")
+                msgs = (j.get("messageData") or j.get("messages")
+                        or j.get("emails") or [])
             except Exception:
                 pass
-            for mid, subj in ids:
+            for m in msgs:
+                if not isinstance(m, dict):
+                    continue
+                subj = m.get("subject", "") or m.get("from", "") or ""
+                mid = m.get("messageID") or m.get("id") or m.get("_id")
                 code = extract_otp(subj, "")
                 if code:
                     return code
-                rc = await self._api("/api/message-content",
-                                     {"email": addr, "messageID": mid})
-                try:
-                    md = json.loads(rc.get("body") or "{}").get("messageData") or {}
-                    body = f"{md.get('subject','')}\n{md.get('content','')}"
-                except Exception:
+                if mid:
+                    rc = await self._api(f"/api/message/{mid}", None, "GET")
                     body = rc.get("body", "")
-                code = extract_otp(subj, body)
-                if code:
-                    return code
+                    code = extract_otp(subj, body)
+                    if code:
+                        return code
             await asyncio.sleep(6)
         return None
 
