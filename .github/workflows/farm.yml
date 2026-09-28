@@ -45,7 +45,9 @@ jobs:
       - name: Farm akun
         if: steps.quota.outputs.skip != '1'
         run: |
-          python3 th_farm.py 1 --quiet
+          # --wait 15: kalau kena rate limit, jangan nunggu 1 jam default,
+          # langsung fail biar job kelar cepet (bisa kelihatan & retry)
+          python3 th_farm.py 1 --quiet --wait 15
 
       - name: Upload hasil
         if: always()
