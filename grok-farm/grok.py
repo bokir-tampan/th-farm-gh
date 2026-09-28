@@ -961,7 +961,9 @@ async def run(count=1):
         from mailcx_client import MailCxClient
         mail = MailCxClient(TEMPIK_DOM)
         _orig_create = mail.create_mailbox
-        mail.create_mailbox = lambda: _orig_create()[0]   # grok.py mau string
+        mail.create_inbox = lambda: _orig_create()[0]   # grok.py mau string
+        mail.wait_otp = lambda addr, timeout=90, since=None: mail.wait_for_code(
+            addr, timeout=timeout)
     else:
         from mail_tm_client import MailTm
         mail = MailTm(TEMPIK_API, TEMPIK_DOM)
