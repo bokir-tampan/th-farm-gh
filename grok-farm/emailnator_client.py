@@ -79,18 +79,16 @@ class Emailnator:
         fut = asyncio.run_coroutine_threadsafe(coro, self._loop)
         return fut.result(timeout=timeout)
 
-    async def _api(self, path, payload):
+    async def _api(self, path, payload=None, method="POST"):
         return await self._page.evaluate(
-            """async ([p, body]) => {
-                const r = await fetch('https://www.emailnator.com' + p, {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify(body),
-                    credentials: 'include'
-                });
-                let t = await r.text();
-                return {status: r.status, body: t};
-            }""", [path, payload])
+            """async ([p, body, meth]) => {
+                const opt = {method: meth, credentials: 'include',
+                             headers: {'Content-Type': 'application/json',
+                                       'Accept': 'application/json'}};
+                if (meth !== 'GET' && body !== null) opt.body = JSON.stringify(body);
+                const r = await fetch('https://www.emailnator.com' + p, opt);
+                return {status: r.status, body: (await r.text()).slice(0, 8000)};
+            }""", [path, payload, method])
 
     # ── API ────────────────────────────────────────────────────
     async def _create(self):
