@@ -69,15 +69,22 @@ async def login_and_capture(page, email, password, state, timeout=180,
     """Login lalu tangkap ?code= dari redirect ke 127.0.0.1."""
     captured = {"code": None, "url": None}
 
-    async def on_framenav(frame):
-        u = frame.url
+    # Tangkap redirect ke 127.0.0.1/callback?code=... lewat event REQUEST
+    # (sinkron, tidak balapan dengan teardown frame seperti framenavigated,
+    # yang bikin crash 'Cannot read properties of undefined').
+    def _on_req(req):
+        try:
+            u = req.url
+        except Exception:
+            return
         if "127.0.0.1" in u or "/callback" in u:
             m = re.search(r'[?&]code=([^&]+)', u)
             if m and not captured["code"]:
                 captured["code"] = urllib.parse.unquote(m.group(1))
                 captured["url"] = u[:300]
 
-    page.on("framenavigated", lambda f: asyncio.ensure_future(on_framenav(f)))
+    page.on("request", _on_req)
+    page.on("response", lambda r: _on_req(r.request))
 
     await asyncio.sleep(4)
 
