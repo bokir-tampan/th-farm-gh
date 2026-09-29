@@ -262,33 +262,30 @@ async def main():
             verifier, challenge = pkce()
             url, state = authorize_url(verifier, challenge)
             ctx = await cam.browser.new_context()
-            # Jalur utama: suntik cookie SSO yang sudah ada -> authorize
-            # langsung mengembalikan code tanpa login ulang.
-            injected = False
-            if ck_list:
-                try:
-                    fixed = []
-                    for c in ck_list:
-                        c = dict(c)
-                        c.pop("expires", None) if c.get("expires") is None else None
-                        if not c.get("domain"):
-                            continue
-                        fixed.append({k: v for k, v in c.items()
-                                      if k in ("name", "value", "domain",
-                                               "path", "httpOnly", "secure",
-                                               "sameSite")})
-                    await ctx.add_cookies(fixed)
-                    injected = True
-                except Exception as e:
-                    print(f"  ! {email} cookie gagal disuntik: {str(e)[:90]}", flush=True)
+            # Tanpa suntik cookie: cookie SSO justru membuat authorize
+            # langsung lompat ke grok.com (login dianggap selesai) sehingga
+            # consent OAuth terlewat. Login normal lalu tangani consent.
             page = await ctx.new_page()
             try:
                 await page.goto(url, wait_until="domcontentloaded", timeout=60000)
-                if injected:
-                    code, note = await login_and_capture(page, email, pw, state,
-                                                         skip_login=True)
-                else:
-                    code, note = await login_and_capture(page, email, pw, state)
+                code, note = await login_and_capture(page, email, pw, state,
+                                                     skip_login=False)
+                # Consent: setelah login, authorize minta persetujuan.
+                if not code:
+                    for lbl in ["Allow", "Authorize", "Accept", "Approve",
+                                "Continue", "Yes, allow"]:
+                        try:
+                            b = page.get_by_role("button",
+                                                 name=re.compile(lbl, re.I)).first
+                            if await b.count() and await b.is_visible():
+                                await b.click(timeout=5000)
+                                await asyncio.sleep(4)
+                                code = await page.evaluate(
+                                    "() => (location.href.match(/[?&]code=([^&]+)/)||[])[1]")
+                                if code:
+                                    break
+                        except Exception:
+                            pass
                 if code:
                     st, tok = exchange(code, verifier)
                     if st == 200 and isinstance(tok, dict) and tok.get("access_token"):
