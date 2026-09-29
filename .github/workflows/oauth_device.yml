@@ -1,0 +1,21 @@
+name: oauth device
+on:
+  workflow_dispatch:
+jobs:
+  d:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install --quiet requests
+      - name: Device flow
+        working-directory: grok-farm
+        run: timeout 300 python oauth_device.py 2>&1 | tee dv.log || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: oauth-device
+          path: grok-farm/*.log
