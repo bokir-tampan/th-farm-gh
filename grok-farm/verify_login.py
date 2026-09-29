@@ -113,20 +113,21 @@ async def try_login(page, email, password):
 async def main():
     from camoufox.async_api import AsyncCamoufox
 
-    # ambil akun dari artefak
+    # ambil akun dari artefak (sso_art/*.txt hasil download runner)
     accounts = []
-    for f in sorted(glob.glob("grok-farm/../grok-art/*/sso.txt")) + \
-             sorted(glob.glob("sso_art/*/sso.txt")) + \
-             sorted(glob.glob("*/sso.txt")):
-        for line in open(f):
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                j = json.loads(line)
-            except Exception:
-                continue
-            accounts.append((j["email"], j["password"]))
+    patterns = ["sso_art/*.txt", "grok-art/*/sso.txt", "../grok-art/*/sso.txt",
+                "*/sso.txt"]
+    for pat in patterns:
+        for f in sorted(glob.glob(pat)):
+            for line in open(f):
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    j = json.loads(line)
+                except Exception:
+                    continue
+                accounts.append((j["email"], j["password"]))
     # fallback: dari argumen
     if not accounts and len(sys.argv) > 2:
         accounts = [(sys.argv[1], sys.argv[2])]
