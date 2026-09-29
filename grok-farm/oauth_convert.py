@@ -64,7 +64,8 @@ def authorize_url(verifier, challenge):
     return AUTHORIZE + "?" + urllib.parse.urlencode(q), q["state"]
 
 
-async def login_and_capture(page, email, password, state, timeout=180):
+async def login_and_capture(page, email, password, state, timeout=180,
+                            skip_login=False):
     """Login lalu tangkap ?code= dari redirect ke 127.0.0.1."""
     captured = {"code": None, "url": None}
 
@@ -79,6 +80,17 @@ async def login_and_capture(page, email, password, state, timeout=180):
     page.on("framenavigated", lambda f: asyncio.ensure_future(on_framenav(f)))
 
     await asyncio.sleep(4)
+
+    # Cookie SSO sudah disuntik: halaman authorize idealnya langsung
+    # redirect ke 127.0.0.1/callback. Tunggu sebentar; kalau code muncul,
+    # tidak perlu login sama sekali.
+    if skip_login:
+        t0 = asyncio.get_event_loop().time()
+        while asyncio.get_event_loop().time() - t0 < 12:
+            if captured["code"]:
+                return captured["code"], "ok (cookie)"
+            await asyncio.sleep(1)
+
     for lbl in ["Accept All Cookies", "Accept all"]:
         try:
             b = page.get_by_role("button", name=lbl).first
@@ -88,9 +100,34 @@ async def login_and_capture(page, email, password, state, timeout=180):
         except Exception:
             pass
 
+    # Halaman sign-in OAuth menampilkan PILIHAN dulu (X / email / Apple /
+    # Google / GitHub). Tanpa klik 'Sign in with email' tidak ada field
+    # email sama sekali -> itu penyebab 'no email field'.
+    for lbl in ["Sign in with email", "sign in with email",
+                "Sign up with email", "Use email", "Continue with email",
+                "Sign in with a different method", "Email"]:
+        try:
+            b = page.get_by_role("button", name=lbl).first
+            if await b.count() and await b.is_visible():
+                await b.click(timeout=4000)
+                await asyncio.sleep(2.5)
+                break
+        except Exception:
+            pass
+    # fallback: klik teks apa pun yang memuat 'email'
+    if not captured["code"]:
+        try:
+            el = page.get_by_text(re.compile(r"with email", re.I)).first
+            if await el.count():
+                await el.click(timeout=4000)
+                await asyncio.sleep(2.5)
+        except Exception:
+            pass
+
     # form email
     got_email = False
-    for sel in ['input[type="email"]', 'input[name="email"]']:
+    for sel in ['input[type="email"]', 'input[name="email"]',
+                'input[autocomplete="email"]']:
         try:
             i = page.locator(sel).first
             if await i.count() and await i.is_visible():
@@ -101,7 +138,11 @@ async def login_and_capture(page, email, password, state, timeout=180):
         except Exception:
             pass
     if not got_email:
-        return None, "no email field"
+        try:
+            dbg = await page.evaluate("document.body ? document.body.innerText.slice(0,300) : ''")
+        except Exception:
+            dbg = ""
+        return None, f"no email field; url={page.url[:140]} body={dbg[:140]!r}"
     for lbl in ["Continue", "Next", "Sign in", "Continue with email"]:
         try:
             b = page.get_by_role("button", name=lbl).first
@@ -195,9 +236,9 @@ async def main():
                     j = json.loads(line)
                 except Exception:
                     continue
-                accounts.append((j["email"], j["password"]))
+                accounts.append((j["email"], j["password"], j.get("cookies") or []))
     if len(sys.argv) > 2:
-        accounts = [(sys.argv[1], sys.argv[2])]
+        accounts = [(sys.argv[1], sys.argv[2], [])]
     seen = set()
     accounts = [a for a in accounts if not (a[0] in seen or seen.add(a[0]))]
     if not accounts:
@@ -210,22 +251,45 @@ async def main():
     await cam.start()
     out = []
     try:
-        for email, pw in accounts:
+        for email, pw, ck_list in accounts:
             verifier, challenge = pkce()
             url, state = authorize_url(verifier, challenge)
-            page = await cam.browser.new_page()
+            ctx = await cam.browser.new_context()
+            # Jalur utama: suntik cookie SSO yang sudah ada -> authorize
+            # langsung mengembalikan code tanpa login ulang.
+            injected = False
+            if ck_list:
+                try:
+                    fixed = []
+                    for c in ck_list:
+                        c = dict(c)
+                        c.pop("expires", None) if c.get("expires") is None else None
+                        if not c.get("domain"):
+                            continue
+                        fixed.append({k: v for k, v in c.items()
+                                      if k in ("name", "value", "domain",
+                                               "path", "httpOnly", "secure",
+                                               "sameSite")})
+                    await ctx.add_cookies(fixed)
+                    injected = True
+                except Exception as e:
+                    print(f"  ! {email} cookie gagal disuntik: {str(e)[:90]}", flush=True)
+            page = await ctx.new_page()
             try:
                 await page.goto(url, wait_until="domcontentloaded", timeout=60000)
-                code, note = await login_and_capture(page, email, pw, state)
+                if injected:
+                    code, note = await login_and_capture(page, email, pw, state,
+                                                         skip_login=True)
+                else:
+                    code, note = await login_and_capture(page, email, pw, state)
                 if code:
                     st, tok = exchange(code, verifier)
                     if st == 200 and isinstance(tok, dict) and tok.get("access_token"):
                         print(f"  ✓ {email:26} TOKEN OK scope={tok.get('scope','')}",
                               flush=True)
-                        out.append({"email": email, "password": pw,
-                                    "token": tok})
+                        out.append({"email": email, "password": pw, "token": tok})
                     else:
-                        print(f"  ~ {email:26} code OK, tukar token gagal: {st} {str(tok)[:140]}",
+                        print(f"  ~ {email:26} code OK, tukar gagal: {st} {str(tok)[:140]}",
                               flush=True)
                 else:
                     print(f"  ✗ {email:26} {note}", flush=True)
@@ -233,6 +297,10 @@ async def main():
                 print(f"  ✗ {email:26} ERR {type(e).__name__}: {str(e)[:120]}",
                       flush=True)
             await page.close()
+            try:
+                await ctx.close()
+            except Exception:
+                pass
         if out:
             with open("grok_oauth.json", "w") as fh:
                 json.dump(out, fh, indent=2)
