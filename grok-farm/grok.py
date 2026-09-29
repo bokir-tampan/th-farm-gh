@@ -765,8 +765,17 @@ async def signup_one(mail):
             if not await fill_first(page, [sel], val, 6):
                 missing.append(label)
         if missing:
-            raise RuntimeError(f"field tidak ketemu: {', '.join(missing)}")
-        ok(f"identity: {given} {family}")
+            # Form nama/password sering tidak dirender di flow baru; kita
+            # submit lewat _CREATE_JS dengan nilai yang sama, jadi ini bukan
+            # blocker — hanya dicatat, lalu lanjut.
+            no(f"field tidak dirender: {', '.join(missing)} (lanjut via API)")
+            try:
+                dbg = await _body_text(page)
+                print(f"  {DIM}[debug] body={dbg[:400]!r}{RST}", flush=True)
+            except Exception:
+                pass
+        else:
+            ok(f"identity: {given} {family}")
 
         step(10, "Solve Turnstile")
         tok = await get_turnstile_token(page)
