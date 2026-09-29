@@ -1,0 +1,32 @@
+name: grok 9router
+on:
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: jumlah akun
+        default: '2'
+jobs:
+  g:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install
+        run: |
+          python -m pip install --quiet "camoufox[geoip]" curl_cffi requests
+          python -m camoufox fetch
+      - name: Convert
+        working-directory: grok-farm
+        env:
+          LIMIT: ${{ github.event.inputs.limit }}
+        run: timeout 1200 python grok9router.py 2>&1 | tee g9.log || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: grok-9router
+          path: |
+            grok-farm/g9.log
+            grok-farm/grok_oauth.json
