@@ -78,7 +78,8 @@ def follow(sess, start, max_hops=12, log=None):
                      + (f" -> {loc[:45]}" if loc else ""))
         if not loc:
             # mungkin /account -> perlu login; simpan body sebagai petunjuk
-            trail.append(f"body={re.sub(r'\\s+', ' ', r.text[:80])!r}")
+            flat = re.sub(r"\s+", " ", r.text[:80])
+            trail.append(f"body={flat!r}")
             return None, trail
         # Location relatif -> absolut
         url = urllib.parse.urljoin(url, loc)
