@@ -64,6 +64,7 @@ HEADLESS     = True         # jendela tidak muncul, proses tetap jalan di belaka
 # Concurrency = jalankan beberapa proses, bukan beberapa tab.
 MAX_PARALLEL = 1
 OTP_TIMEOUT  = 90
+MAX_ATTEMPTS = 3   # inbox publik sering dipakai orang lain -> 'existing account'
 TURNSTILE_WAIT = 12        # native solve biasanya 2-5 dtk
 INSTALL_9R   = True
 R9_URL       = 'http://localhost:20128'
@@ -861,6 +862,16 @@ async def signup_one(mail):
         except Exception:
             pass
 
+        # xAI: alamat sudah terpakai (inbox publik) -> akun tidak akan pernah
+        # dibuat. Gagalkan cepat supaya retry loop bikin alamat baru.
+        try:
+            if "existing account" in (await _body_text(page)).lower():
+                raise RuntimeError(f"existing account found ({addr})")
+        except RuntimeError:
+            raise
+        except Exception:
+            pass
+
         step(9, "Fill name + password")
         given, family = rand_name()
         missing = []
@@ -1108,8 +1119,28 @@ async def run(count=1):
         t_acc = time.time()
         signup_one.last_email = '?'
         email = '?'
-        try:
-            res = await signup_one(mail)
+        # Inbox publik (emailnator) sering sudah dipakai orang lain -> xAI
+        # menjawab 'Existing account found'. Coba ulang dengan alamat baru
+        # sebelum menyerah, karena kegagalan ini instan (~1 menit).
+        res = None
+        last_exc = None
+        for attempt in range(MAX_ATTEMPTS):
+            try:
+                res = await signup_one(mail)
+                break
+            except Exception as e:
+                last_exc = e
+                email = getattr(signup_one, 'last_email', '?') or '?'
+                reason = str(e).lower()
+                retryable = ('existing account' in reason
+                             or 'email submit not confirmed' in reason
+                             or 'code is invalid' in reason)
+                if retryable and attempt < MAX_ATTEMPTS - 1:
+                    wt(f"attempt {attempt+1} gagal ({str(e)[:60]}) — inbox baru")
+                    await asyncio.sleep(2)
+                    continue
+                break
+        if res is not None:
             email = res['email']
             ok_n += 1
             tail = ''
@@ -1118,7 +1149,8 @@ async def run(count=1):
             elif res.get('installed') is False:
                 tail = f"  {RED}✖ 9Router: NOT installed{RST}"
             print(f"\n  {GRN}✔ SUCCESS{RST} {email}  ({res['elapsed']}s){tail}", flush=True)
-        except Exception as e:
+        else:
+            e = last_exc
             email = getattr(signup_one, 'last_email', '?') or '?'
             reason = str(e)
             if 'turnstile' in reason.lower():
