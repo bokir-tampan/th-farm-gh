@@ -619,6 +619,55 @@ async def fill_first(page, selectors, value, timeout=10):
     return False
 
 
+async def _force_react_value(page, selectors, value):
+    """Set nilai input lewat setter native + event input.
+
+    Playwright .fill() mengubah DOM tanpa memicu event yang didengar React,
+    jadi state internal tetap kosong walau kotak terlihat terisi. Setter
+    native + input/change event membuat React mencatat nilainya.
+    """
+    for sel in selectors:
+        try:
+            el = page.locator(sel).first
+            if await el.count() == 0:
+                continue
+            await el.evaluate(
+                """(el, v) => {
+                    const proto = el instanceof HTMLTextAreaElement
+                        ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+                    const setter = Object.getOwnPropertyDescriptor(proto, 'value').set;
+                    const last = el.value;
+                    setter.call(el, '');
+                    el.dispatchEvent(new Event('input', {bubbles: true}));
+                    setter.call(el, v);
+                    el.dispatchEvent(new Event('input', {bubbles: true}));
+                    el.dispatchEvent(new Event('change', {bubbles: true}));
+                    if (el.value !== last) {
+                        el.dispatchEvent(new Event('blur', {bubbles: true}));
+                    }
+                    el.focus();
+                }""", value)
+            return True
+        except Exception:
+            pass
+    return False
+
+
+async def click_first(page, selectors, timeout=8):
+    t0 = time.time()
+    while time.time() - t0 < timeout:
+        for sel in selectors:
+            try:
+                el = page.locator(sel).first
+                if await el.count() > 0 and await el.is_visible():
+                    await el.click(timeout=3000)
+                    return True
+            except Exception:
+                pass
+        await asyncio.sleep(0.4)
+    return False
+
+
 _CREATE_JS = """
 async (body) => {
     const r = await fetch(%r, {
@@ -754,6 +803,45 @@ async def signup_one(mail):
         if not otp_filled:
             raise RuntimeError("OTP input not found")
         await asyncio.sleep(0.8)
+
+        # React/Next mengabaikan nilai yang di-set lewat .fill() tanpa event:
+        # kotak terlihat berisi kode, state internal masih kosong, dan submit
+        # dijawab 'That code is invalid or has expired'. Kejar dengan event
+        # input yang benar sebelum menekan Confirm.
+        await _force_react_value(page, [
+            'input[name="code"]', 'input[autocomplete="one-time-code"]',
+            'input[inputmode="numeric"]'], code)
+        await asyncio.sleep(0.4)
+        await click_first(page, [
+            'button:has-text("Confirm")', 'button:has-text("Confirm email")',
+            'button:has-text("Verify")', 'button[type="submit"]',
+            'form button'], 6)
+        await asyncio.sleep(3)
+        try:
+            _vbody = await _body_text(page)
+            if "invalid or has expired" in _vbody.lower():
+                no("OTP ditolak — kirim ulang kode + isi ulang")
+                await click_first(page, ['button:has-text("Resend")',
+                                         'a:has-text("Resend")'], 4)
+                await asyncio.sleep(12)
+                code2 = mail.wait_otp(addr, timeout=90)
+                if code2:
+                    ok(f"OTP baru: {code2}")
+                    await fill_first(page, [
+                        'input[name="code"]',
+                        'input[autocomplete="one-time-code"]',
+                        'input[inputmode="numeric"]'], code2, 8)
+                    await _force_react_value(page, [
+                        'input[name="code"]',
+                        'input[autocomplete="one-time-code"]',
+                        'input[inputmode="numeric"]'], code2)
+                    await click_first(page, [
+                        'button:has-text("Confirm")',
+                        'button:has-text("Confirm email")',
+                        'button[type="submit"]', 'form button'], 6)
+                    await asyncio.sleep(3)
+        except Exception:
+            pass
 
         step(9, "Fill name + password")
         given, family = rand_name()
