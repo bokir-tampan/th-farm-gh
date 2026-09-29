@@ -45,6 +45,7 @@ class Emailnator:
         self._thread: threading.Thread | None = None
         self._page = None
         self._cam = None
+        self._n = 0                      # rotasi tipe alamat
         self._ready = threading.Event()
 
     # ── thread + browser ───────────────────────────────────────
