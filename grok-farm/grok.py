@@ -804,22 +804,40 @@ async def signup_one(mail):
             raise RuntimeError("OTP input not found")
         await asyncio.sleep(0.8)
 
-        # React/Next mengabaikan nilai yang di-set lewat .fill() tanpa event:
-        # kotak terlihat berisi kode, state internal masih kosong, dan submit
-        # dijawab 'That code is invalid or has expired'. Kejar dengan event
-        # input yang benar sebelum menekan Confirm.
-        await _force_react_value(page, [
-            'input[name="code"]', 'input[autocomplete="one-time-code"]',
-            'input[inputmode="numeric"]'], code)
-        await asyncio.sleep(0.4)
+        # Next/React mengabaikan nilai yang di-set .fill() tanpa event: kotak
+        # terlihat berisi kode, state internal masih kosong, dan Confirm
+        # mengirim kode kosong -> 'That code is invalid or has expired'.
+        # Solusi paling andal: ketik lewat keyboard asli (key event benar).
+        typed = False
+        try:
+            boxes = page.locator('input[maxlength="1"]')
+            n = await boxes.count()
+            if n >= 6:
+                await boxes.nth(0).click(timeout=4000)
+                await page.keyboard.type(code, delay=90)
+                typed = True
+            else:
+                await _force_react_value(page, [
+                    'input[name="code"]',
+                    'input[autocomplete="one-time-code"]',
+                    'input[inputmode="numeric"]'], code)
+        except Exception:
+            pass
+        if not typed:
+            await _force_react_value(page, [
+                'input[name="code"]',
+                'input[autocomplete="one-time-code"]',
+                'input[inputmode="numeric"]'], code)
+        await asyncio.sleep(0.5)
+
         await click_first(page, [
-            'button:has-text("Confirm")', 'button:has-text("Confirm email")',
+            'button:has-text("Confirm email")', 'button:has-text("Confirm")',
             'button:has-text("Verify")', 'button[type="submit"]',
             'form button'], 6)
-        await asyncio.sleep(3)
+        await asyncio.sleep(4)
         try:
-            _vbody = await _body_text(page)
-            if "invalid or has expired" in _vbody.lower():
+            _vbody = (await _body_text(page)).lower()
+            if "invalid or has expired" in _vbody:
                 no("OTP ditolak — kirim ulang kode + isi ulang")
                 await click_first(page, ['button:has-text("Resend")',
                                          'a:has-text("Resend")'], 4)
@@ -827,19 +845,19 @@ async def signup_one(mail):
                 code2 = mail.wait_otp(addr, timeout=90)
                 if code2:
                     ok(f"OTP baru: {code2}")
-                    await fill_first(page, [
-                        'input[name="code"]',
-                        'input[autocomplete="one-time-code"]',
-                        'input[inputmode="numeric"]'], code2, 8)
-                    await _force_react_value(page, [
-                        'input[name="code"]',
-                        'input[autocomplete="one-time-code"]',
-                        'input[inputmode="numeric"]'], code2)
+                    try:
+                        await boxes.nth(0).click(timeout=4000)
+                        await page.keyboard.type(code2, delay=90)
+                    except Exception:
+                        await fill_first(page, [
+                            'input[name="code"]',
+                            'input[autocomplete="one-time-code"]'], code2, 6)
+                    await asyncio.sleep(0.5)
                     await click_first(page, [
-                        'button:has-text("Confirm")',
                         'button:has-text("Confirm email")',
+                        'button:has-text("Confirm")',
                         'button[type="submit"]', 'form button'], 6)
-                    await asyncio.sleep(3)
+                    await asyncio.sleep(4)
         except Exception:
             pass
 
