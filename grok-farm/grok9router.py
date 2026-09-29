@@ -73,47 +73,65 @@ def http_session(acct):
 
 
 async def click_allow(page, verify_url, log):
-    """Buka verification_uri dan klik Allow; kembalikan True bila sukses."""
+    """Jalani dua halaman: /device (Continue) lalu /device/consent (Allow).
+
+    Tombolnya berbeda tiap halaman — jangan berhenti setelah klik pertama
+    (bug: 'Continue' ikut ke-klik lalu loop selesai sebelum Allow).
+    Selesai bila URL mengandung /device/done.
+    """
     await page.goto(verify_url, wait_until="domcontentloaded", timeout=60000)
     await asyncio.sleep(5)
-    for lbl in ["Accept All Cookies", "Accept all"]:
-        try:
-            b = page.get_by_role("button", name=lbl).first
-            if await b.count():
-                await b.click(timeout=2500)
-                break
-        except Exception:
-            pass
-    await asyncio.sleep(1)
 
-    for _ in range(6):
+    for _ in range(10):
+        url = page.url
+        if "/device/done" in url:
+            log.append("    ✔ device authorized (/done)")
+            return True, "done"
+
         try:
             body = (await page.evaluate(
                 "document.body ? document.body.innerText.slice(0,600) : ''")) or ""
         except Exception:
             body = ""
         flat = re.sub(r"\s+", " ", body).strip()
-        log.append(f"    page: url={page.url[:70]} text={flat[:130]!r}")
-
         low = flat.lower()
-        if any(w in low for w in ["denied", "not authorized", "not available",
-                                  "subscription", "upgrade"]):
+        log.append(f"    {url.split('?')[0][-34:]} | {flat[:110]!r}")
+        if any(w in low for w in ["denied", "not authorized", "not available"]):
             return False, flat
-        # botão de consentimento
-        for lbl in ["Allow", "Authorize", "Approve", "Accept",
-                    "Continue", "Yes, allow", "Agree"]:
+
+        # pilih label sesuai halaman
+        if "/consent" in url:
+            labels = ["Allow", "Authorize", "Approve", "Accept"]
+        else:
+            labels = ["Continue", "Sign in", "Next"]
+        clicked = False
+        for lbl in labels:
             try:
                 b = page.get_by_role("button",
                                      name=re.compile(rf"^{lbl}$", re.I)).first
                 if await b.count() and await b.is_visible():
                     await b.click(timeout=6000)
                     log.append(f"    klik '{lbl}'")
-                    await asyncio.sleep(5)
-                    return True, "clicked"
+                    clicked = True
+                    break
             except Exception:
                 pass
-        await asyncio.sleep(3)
-    return False, "no allow button"
+        # cookie banner
+        if not clicked:
+            for lbl in ["Accept All Cookies", "Accept all"]:
+                try:
+                    b = page.get_by_role("button", name=lbl).first
+                    if await b.count():
+                        await b.click(timeout=2500)
+                        clicked = True
+                        break
+                except Exception:
+                    pass
+        if not clicked:
+            log.append("    (tidak ada tombol)")
+        await asyncio.sleep(4)
+
+    return ("/done" in page.url), "timeout"
 
 
 async def main():
