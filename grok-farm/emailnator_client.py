@@ -24,6 +24,9 @@ import time
 
 _OTP_RE = re.compile(r'code[^0-9]{0,25}(\d{3}[-\s]?\d{3})', re.I)
 GOOGLEMAIL = 8      # EMAIL_TYPES["googleMail"] dari chunk JS emailnator
+PLUSGMAIL  = 2      # EMAIL_TYPES["plusGmail"]
+DOTGMAIL   = 3      # EMAIL_TYPES["dotGmail"]
+TYPES      = [PLUSGMAIL, DOTGMAIL, GOOGLEMAIL]   # rotasi per percobaan
 
 
 def extract_otp(subject, body):
@@ -91,8 +94,9 @@ class Emailnator:
             }""", [path, payload, method])
 
     # ── API ────────────────────────────────────────────────────
-    async def _create(self):
-        r = await self._api("/api/generate-email", {"ids": [GOOGLEMAIL]})
+    async def _create(self, type_id=None):
+        r = await self._api("/api/generate-email",
+                            {"ids": [type_id if type_id is not None else GOOGLEMAIL]})
         addr = ""
         try:
             j = json.loads(r.get("body") or "{}")
@@ -142,7 +146,13 @@ class Emailnator:
 
     # ── interface publik (sinkron) ─────────────────────────────
     def create_inbox(self):
-        return self._call(self._create(), timeout=240)
+        # Rotasi tipe alamat tiap percobaan. Inbox emailnator itu PUBLIK, jadi
+        # alamat googleMail acak sering sudah dipakai orang lain ('existing
+        # account found'). plusGmail (nama+tag@gmail.com) jauh lebih jarang
+        # bentrok karena tag-nya acak.
+        type_id = TYPES[self._n % len(TYPES)]
+        self._n += 1
+        return self._call(self._create(type_id), timeout=240)
 
     def wait_otp(self, addr, timeout=90, since=None):
         return self._call(self._wait(addr, timeout), timeout=timeout + 60)

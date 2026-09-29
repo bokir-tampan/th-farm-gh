@@ -64,7 +64,7 @@ HEADLESS     = True         # jendela tidak muncul, proses tetap jalan di belaka
 # Concurrency = jalankan beberapa proses, bukan beberapa tab.
 MAX_PARALLEL = 1
 OTP_TIMEOUT  = 90
-MAX_ATTEMPTS = 3   # inbox publik sering dipakai orang lain -> 'existing account'
+MAX_ATTEMPTS = 6   # inbox publik sering sudah terpakai -> rotasi alamat
 TURNSTILE_WAIT = 12        # native solve biasanya 2-5 dtk
 INSTALL_9R   = True
 R9_URL       = 'http://localhost:20128'
@@ -829,7 +829,20 @@ async def signup_one(mail):
                 'input[name="code"]',
                 'input[autocomplete="one-time-code"]',
                 'input[inputmode="numeric"]'], code)
-        await asyncio.sleep(0.5)
+        await asyncio.sleep(1.0)
+
+        # Halaman pindah ke 'Existing account found' SEGERA setelah kode
+        # diketik (kode valid, tapi alamat sudah terpakai orang lain — inbox
+        # emailnator itu publik). Gagalkan cepat supaya retry ambil alamat baru;
+        # tidak perlu menekan Confirm atau menunggu Turnstile.
+        try:
+            _b = (await _body_text(page)).lower()
+            if "existing account" in _b:
+                raise RuntimeError(f"existing account found ({addr})")
+        except RuntimeError:
+            raise
+        except Exception:
+            pass
 
         await click_first(page, [
             'button:has-text("Confirm email")', 'button:has-text("Confirm")',
@@ -838,6 +851,8 @@ async def signup_one(mail):
         await asyncio.sleep(4)
         try:
             _vbody = (await _body_text(page)).lower()
+            if "existing account" in _vbody:
+                raise RuntimeError(f"existing account found ({addr})")
             if "invalid or has expired" in _vbody:
                 no("OTP ditolak — kirim ulang kode + isi ulang")
                 await click_first(page, ['button:has-text("Resend")',
