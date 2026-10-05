@@ -1,0 +1,59 @@
+name: relay-farm
+
+# Farm akun New-API dari domain relay (helpcoder.cc dll). Tiap job = 1 IP Azure fresh.
+on:
+  workflow_dispatch:
+    inputs:
+      base:
+        description: 'Base URL relay'
+        required: true
+        default: 'https://helpcoder.cc'
+      per_job:
+        description: 'Akun per job'
+        required: true
+        default: '6'
+      shards:
+        description: 'Jumlah shard paralel'
+        required: true
+        default: '5'
+
+permissions:
+  contents: read
+
+jobs:
+  farm:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install
+        run: pip install --quiet requests
+
+      - name: Skip kalau shard > diminta
+        id: gate
+        run: |
+          if [ "${{ matrix.shard }}" -gt "${{ github.event.inputs.shards }}" ]; then
+            echo "skip=1" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Farm
+        if: steps.gate.outputs.skip != '1'
+        run: python3 relayfarm.py "${{ github.event.inputs.base }}" "${{ github.event.inputs.per_job }}" 3 "${{ matrix.shard }}"
+
+      - name: Upload
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: relay-shard-${{ matrix.shard }}
+          path: relay_shard${{ matrix.shard }}.jsonl
+          if-no-files-found: ignore
