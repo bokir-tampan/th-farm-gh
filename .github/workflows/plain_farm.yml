@@ -1,0 +1,38 @@
+name: plain-farm
+
+on:
+  workflow_dispatch:
+    inputs:
+      host:
+        description: 'host:port'
+        required: true
+        default: '122.51.77.52:3000'
+      count:
+        description: 'akun per runner'
+        required: true
+        default: '15'
+
+permissions:
+  contents: read
+
+jobs:
+  farm:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Farm
+        run: python3 plain_farm.py "${{ github.event.inputs.host }}" "${{ github.event.inputs.count }}" "${{ matrix.shard }}"
+      - name: Upload
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: plain-${{ matrix.shard }}
+          path: plain_${{ matrix.shard }}.jsonl
+          if-no-files-found: ignore
