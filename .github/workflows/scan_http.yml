@@ -12,6 +12,10 @@ on:
         description: 'Jumlah shard'
         required: true
         default: '10'
+      ports:
+        description: 'CSV port'
+        required: false
+        default: '3000,3001'
 
 permissions:
   contents: read
@@ -30,7 +34,7 @@ jobs:
           python-version: '3.11'
       - run: pip install --quiet aiohttp
       - name: Scan
-        run: python3 scan_http.py "${{ github.event.inputs.prefixes }}" "3000,3001" "${{ matrix.shard }}" "${{ github.event.inputs.shards }}" "scan_http_${{ matrix.shard }}.jsonl"
+        run: python3 scan_http.py "${{ github.event.inputs.prefixes }}" "${{ github.event.inputs.ports }}" "${{ matrix.shard }}" "${{ github.event.inputs.shards }}" "scan_http_${{ matrix.shard }}.jsonl"
       - name: Upload
         if: always()
         uses: actions/upload-artifact@v4
