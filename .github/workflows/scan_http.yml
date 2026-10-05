@@ -1,0 +1,40 @@
+name: scan-http
+
+# Sapu /16 http-only cari New-API, sharded, dari IP Azure fresh.
+on:
+  workflow_dispatch:
+    inputs:
+      prefixes:
+        description: 'CSV prefix a.b'
+        required: true
+        default: '47.64,47.65'
+      shards:
+        description: 'Jumlah shard'
+        required: true
+        default: '10'
+
+permissions:
+  contents: read
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install --quiet aiohttp
+      - name: Scan
+        run: python3 scan_http.py "${{ github.event.inputs.prefixes }}" "3000,3001" "${{ matrix.shard }}" "${{ github.event.inputs.shards }}" "scan_http_${{ matrix.shard }}.jsonl"
+      - name: Upload
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: scan-http-${{ matrix.shard }}
+          path: scan_http_${{ matrix.shard }}.jsonl
+          if-no-files-found: ignore
