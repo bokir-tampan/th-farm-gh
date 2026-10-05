@@ -1,0 +1,49 @@
+name: multihost-farm
+
+# Farm akun New-API dari 10 host LIVE. Tiap job = 1 runner = 1 IP Azure fresh
+# -> jatah registrasi baru per host (blok 429 nempel di IP, bukan di akun).
+on:
+  workflow_dispatch:
+    inputs:
+      per_host:
+        description: 'Akun per host per job'
+        required: true
+        default: '6'
+      hosts:
+        description: 'Daftar host (koma)'
+        required: true
+        default: '43.134.102.223:3000,47.109.159.189:8000,124.156.138.219:3000,43.153.159.64:3000,47.99.158.23:3000,47.108.250.5:3000,175.24.134.224:3000,43.172.83.41:3000,47.90.243.168:3000,106.52.62.17:3001'
+
+permissions:
+  contents: read
+
+jobs:
+  farm:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Farm host shard
+        env:
+          HOSTS: ${{ github.event.inputs.hosts }}
+          PER: ${{ github.event.inputs.per_host }}
+          SHARD: ${{ matrix.shard }}
+        run: python3 multihost_farm.py "$HOSTS" "$PER" "$SHARD" 5
+
+      - name: Upload hasil
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: farm-shard-${{ matrix.shard }}
+          path: multihost_shard${{ matrix.shard }}.jsonl
+          if-no-files-found: ignore
