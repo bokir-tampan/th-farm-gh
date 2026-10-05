@@ -1,0 +1,54 @@
+name: ts-farm
+
+# Farm akun New-API di host ber-Turnstile dari GH runner (Camoufox).
+on:
+  workflow_dispatch:
+    inputs:
+      base:
+        description: 'Base URL host'
+        required: true
+        default: 'https://sudoflow.top'
+      count:
+        description: 'Akun'
+        required: true
+        default: '2'
+      shards:
+        description: 'Shard paralel'
+        required: true
+        default: '3'
+
+permissions:
+  contents: read
+
+jobs:
+  farm:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install
+        run: |
+          pip install --quiet camoufox[geoip] requests
+          python -m camoufox fetch
+      - name: Skip
+        id: gate
+        run: |
+          if [ "${{ matrix.shard }}" -gt "${{ github.event.inputs.shards }}" ]; then
+            echo "skip=1" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Farm
+        if: steps.gate.outputs.skip != '1'
+        run: python3 tsfarm.py "${{ github.event.inputs.base }}" "${{ github.event.inputs.count }}" "ts_shard${{ matrix.shard }}.jsonl"
+      - name: Upload
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ts-shard-${{ matrix.shard }}
+          path: ts_shard${{ matrix.shard }}.jsonl
+          if-no-files-found: ignore
