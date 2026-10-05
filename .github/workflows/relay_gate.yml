@@ -1,0 +1,40 @@
+name: relay-gate
+
+# Probe gate register 77 relay dari IP Azure fresh (shard), register 1 akun/host.
+on:
+  workflow_dispatch:
+    inputs:
+      shards:
+        description: 'Jumlah shard'
+        required: true
+        default: '4'
+      hosts_file:
+        description: 'File daftar host'
+        required: true
+        default: 'relay_hosts.txt'
+
+permissions:
+  contents: read
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install --quiet requests
+      - name: Gate
+        run: python3 relaygate.py "${{ github.event.inputs.hosts_file }}" "relay_gate_${{ matrix.shard }}.jsonl" "${{ matrix.shard }}" "${{ github.event.inputs.shards }}"
+      - name: Upload
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: relay-gate-${{ matrix.shard }}
+          path: relay_gate_${{ matrix.shard }}.jsonl
+          if-no-files-found: ignore
