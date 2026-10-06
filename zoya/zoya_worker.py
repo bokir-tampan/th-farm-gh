@@ -37,15 +37,21 @@ def log(*a):
     print(f"[{time.strftime('%H:%M:%S')}]", *a, flush=True)
 
 
+def _norm(p):
+    if not p:
+        return ""
+    return p if "://" in p else "http://" + p
+
+
 def pick_proxy():
     """Sticky proxy per runner: pilih dari PROXY_LIST pakai hash nama job."""
     if PROXY:
-        return PROXY
+        return _norm(PROXY)
     if not PLIST:
         return ""
     key = os.environ.get("GITHUB_JOB", "") or os.environ.get("GITHUB_RUN_ID", "0")
     idx = sum(map(ord, key)) % len(PLIST)
-    return PLIST[idx]
+    return _norm(PLIST[idx])
 
 
 def otp_from_inbox(n, addr, timeout=180):
@@ -81,9 +87,7 @@ def upload_video(z, url, title="Coba Video"):
 def main():
     px = pick_proxy()
     os.environ["ZOYA_PROXY"] = px
-    if px:
-        os.environ.setdefault("HTTP_PROXY", px)
-        os.environ.setdefault("HTTPS_PROXY", px)
+    # CATATAN: jangan set HTTP(S)_PROXY global -> inbox naytra tetap DIRECT
 
     ip = requests.get("https://ipv4.icanhazip.com", timeout=25).text.strip() if not px else "(proxy)"
     log("proxy:", px or "DIRECT", "| exit-ip:", ip)
