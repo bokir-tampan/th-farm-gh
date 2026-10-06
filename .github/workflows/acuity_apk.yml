@@ -19,7 +19,7 @@ jobs:
       - name: Try downloaders
         run: |
           mkdir -p apk && cd apk
-          for d in apkpure google-play; do
+          for d in apk-pure google-play; do
             echo "=== $d ==="
             ../apkeep -a com.acuityai -d $d . 2>&1 | tail -6 || true
           done
