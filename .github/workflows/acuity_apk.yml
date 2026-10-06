@@ -12,22 +12,30 @@ jobs:
         run: |
           curl -sL -o apkeep "https://github.com/EFForg/apkeep/releases/download/1.1.0/apkeep-x86_64-unknown-linux-gnu"
           chmod +x apkeep
-      - name: apk-pure
+      - name: Try apk-pure (ack tos)
+        continue-on-error: true
         run: |
           mkdir -p apk && cd apk
-          ../apkeep -a com.acuityai -d apk-pure . ; echo "exit=$?"
+          ../apkeep -a com.acuityai -d apk-pure --accept-tos . 2>&1 | tail -8; echo "exit=$?"
           ls -la
-      - name: google-play
+      - name: Try apk-pure bare
+        continue-on-error: true
         run: |
           cd apk
-          ../apkeep -a com.acuityai -d google-play . ; echo "exit=$?"
+          ../apkeep -a com.acuityai -d apk-pure . 2>&1 | tail -8; echo "exit=$?"
           ls -la
-      - name: HTML fallback (runner IP)
+      - name: Try google-play anon
+        continue-on-error: true
         run: |
           cd apk
-          curl -s -A "Mozilla/5.0 (Linux; Android 13)" -L "https://apkpure.com/acuity-studios/com.acuityai/download" -o pure.html -w "pure %{http_code}\n"
-          grep -oE 'https://[^" ]*(d\.apkpure|download)[^" ]*' pure.html | head -5
-          curl -s -A "Mozilla/5.0" -L "https://apkcombo.app/acuity-studios/com.acuityai/" -o combo.html -w "combo %{http_code}\n"
+          ../apkeep -a com.acuityai -d google-play . 2>&1 | tail -8; echo "exit=$?"
+          ls -la
+      - name: HTML fallback apkpure
+        continue-on-error: true
+        run: |
+          cd apk
+          curl -s -A "Mozilla/5.0 (Linux; Android 13; SM-S918B) AppleWebKit/537.36 Chrome/126 Mobile" -L "https://apkpure.com/acuity-studios/com.acuityai/download" -o pure.html -w "pure %{http_code} %{size_download}\n"
+          grep -oE 'https://[^" ]*\.(apk|xapk)[^" ]*|d\.apkpure[^" ]*' pure.html | head -5
       - uses: actions/upload-artifact@v4
         if: always()
         with:
