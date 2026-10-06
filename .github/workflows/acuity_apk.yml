@@ -8,34 +8,20 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Fetch apkeep
-        run: |
-          curl -sL -o apkeep "https://github.com/EFForg/apkeep/releases/download/1.1.0/apkeep-x86_64-unknown-linux-gnu"
-          chmod +x apkeep
-      - name: Try apk-pure (ack tos)
-        continue-on-error: true
+      - name: mirrors
         run: |
           mkdir -p apk && cd apk
-          ../apkeep -a com.acuityai -d apk-pure --accept-tos . 2>&1 | tail -8; echo "exit=$?"
+          UA="Mozilla/5.0 (Linux; Android 13; SM-S918B) AppleWebKit/537.36 Chrome/126 Mobile Safari/537.36"
+          try() { echo "### $1"; curl -s -A "$UA" -L "$1" -o out.bin -w "http=%{http_code} size=%{size_download} ct=%{content_type}\n"; file out.bin; if file out.bin | grep -qi zip; then cp out.bin "$2"; fi; }
+          try "https://d.apkpure.com/b/APK/com.acuityai?version=latest" a1.apk
+          try "https://apkpure.com/acuity-studios/com.acuityai/download/apk" a2.html
+          try "https://apkcombo.com/acuity-studios/com.acuityai/download/apk" a3.html
+          try "https://apkfab.com/acuity-studios/com.acuityai/apk" a4.html
+          try "https://apksos.com/app/com.acuityai" a5.html
+          try "https://apkgk.com/com.acuityai" a6.html
+          try "https://apk.support/app/com.acuityai" a7.html
+          try "https://androidappsapk.co/download/com.acuityai" a8.html
           ls -la
-      - name: Try apk-pure bare
-        continue-on-error: true
-        run: |
-          cd apk
-          ../apkeep -a com.acuityai -d apk-pure . 2>&1 | tail -8; echo "exit=$?"
-          ls -la
-      - name: Try google-play anon
-        continue-on-error: true
-        run: |
-          cd apk
-          ../apkeep -a com.acuityai -d google-play . 2>&1 | tail -8; echo "exit=$?"
-          ls -la
-      - name: HTML fallback apkpure
-        continue-on-error: true
-        run: |
-          cd apk
-          curl -s -A "Mozilla/5.0 (Linux; Android 13; SM-S918B) AppleWebKit/537.36 Chrome/126 Mobile" -L "https://apkpure.com/acuity-studios/com.acuityai/download" -o pure.html -w "pure %{http_code} %{size_download}\n"
-          grep -oE 'https://[^" ]*\.(apk|xapk)[^" ]*|d\.apkpure[^" ]*' pure.html | head -5
       - uses: actions/upload-artifact@v4
         if: always()
         with:
