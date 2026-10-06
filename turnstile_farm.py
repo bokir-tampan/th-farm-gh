@@ -117,6 +117,25 @@ def register_one(page, i):
         time.sleep(1)
     token = solve_turnstile(page, timeout_s=75)
     if not token:
+        # DEBUG: dump state
+        try:
+            dbg = page.evaluate("""() => {
+                const all = [];
+                document.querySelectorAll('input,textarea,iframe,div').forEach(el => {
+                    const t = (el.tagName||'').toLowerCase();
+                    const cls = el.className || '';
+                    const nm = el.name || '';
+                    const src = el.src || '';
+                    if (t==='iframe'||nm.includes('turnstile')||cls.includes('turnstile')||cls.includes('cf-'))
+                        all.push(t+'.'+String(cls).slice(0,40)+' name='+nm+' src='+String(src).slice(0,60));
+                });
+                return {url:location.href, title:document.title, n:all.length, els:all.slice(0,25),
+                        bodyLen:document.body.innerHTML.length};
+            }""")
+            print("  DEBUG:", json.dumps(dbg)[:800], flush=True)
+            page.screenshot(path=f"dbg_{SHARD}.png", full_page=True)
+        except Exception as e:
+            print("  debug err:", str(e)[:80], flush=True)
         return {"host": HOST, "verdict": "NO_TOKEN"}
     print(f"[{i}] token={token[:16]}...", flush=True)
 
