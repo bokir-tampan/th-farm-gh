@@ -1,0 +1,63 @@
+name: zoya-farm
+
+on:
+  workflow_dispatch:
+    inputs:
+      accounts:
+        description: 'Jumlah akun'
+        required: true
+        default: '5'
+      video:
+        description: 'URL .mp4 untuk auto-upload tiap akun (opsional)'
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+jobs:
+  farm:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 1 job = 1 akun = 1 IP runner + 1 proxy (rotasi)
+        index: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install
+        run: pip install --quiet requests
+
+      - name: Hitung jatah
+        id: quota
+        shell: bash
+        run: |
+          TOTAL="${{ github.event.inputs.accounts }}"
+          IDX="${{ matrix.index }}"
+          if [ "$TOTAL" -lt "$IDX" ]; then echo "skip=1" >> "$GITHUB_OUTPUT"; fi
+
+      - name: Farm akun
+        if: steps.quota.outputs.skip != '1'
+        env:
+          PROXY_LIST: ${{ secrets.PROXY_LIST }}
+          NAYTRA_USER: ${{ secrets.NAYTRA_USER }}
+          NAYTRA_PW: ${{ secrets.NAYTRA_PW }}
+          ZOYA_VIDEO: ${{ github.event.inputs.video }}
+          ZOYA_REF: a66b1a6f
+        run: python3 zoya/zoya_worker.py 2>&1 | tee zoya_${{ matrix.index }}.log
+
+      - name: Upload hasil
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: zoya-${{ matrix.index }}
+          path: |
+            result.json
+            state.txt
+            zoya_${{ matrix.index }}.log
+          if-no-files-found: warn
