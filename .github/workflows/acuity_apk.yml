@@ -1,11 +1,8 @@
 name: acuity-apk
-
 on:
   workflow_dispatch:
-
 permissions:
   contents: read
-
 jobs:
   get:
     runs-on: ubuntu-latest
@@ -15,19 +12,24 @@ jobs:
         run: |
           curl -sL -o apkeep "https://github.com/EFForg/apkeep/releases/download/1.1.0/apkeep-x86_64-unknown-linux-gnu"
           chmod +x apkeep
-          ./apkeep --version || true
-      - name: Try downloaders
+      - name: apk-pure
         run: |
           mkdir -p apk && cd apk
-          for d in apk-pure google-play; do
-            echo "=== $d ==="
-            ../apkeep -a com.acuityai -d $d . 2>&1 | tail -6 || true
-          done
+          ../apkeep -a com.acuityai -d apk-pure . ; echo "exit=$?"
           ls -la
-          file * 2>/dev/null || true
-      - name: Upload
+      - name: google-play
+        run: |
+          cd apk
+          ../apkeep -a com.acuityai -d google-play . ; echo "exit=$?"
+          ls -la
+      - name: HTML fallback (runner IP)
+        run: |
+          cd apk
+          curl -s -A "Mozilla/5.0 (Linux; Android 13)" -L "https://apkpure.com/acuity-studios/com.acuityai/download" -o pure.html -w "pure %{http_code}\n"
+          grep -oE 'https://[^" ]*(d\.apkpure|download)[^" ]*' pure.html | head -5
+          curl -s -A "Mozilla/5.0" -L "https://apkcombo.app/acuity-studios/com.acuityai/" -o combo.html -w "combo %{http_code}\n"
+      - uses: actions/upload-artifact@v4
         if: always()
-        uses: actions/upload-artifact@v4
         with:
           name: acuity-apk
           path: apk/
