@@ -13,7 +13,7 @@ import urllib.request, urllib.error
 HOST = sys.argv[1]
 N = int(sys.argv[2]) if len(sys.argv) > 2 else 3
 SHARD = sys.argv[3] if len(sys.argv) > 3 else "0"
-BASE = "http://" + HOST
+BASE = HOST if HOST.startswith("http") else ("http://" + HOST)
 OUT = f"tst_{SHARD}.jsonl"
 UA = {"User-Agent": "Mozilla/5.0", "Content-Type": "application/json"}
 
