@@ -1,0 +1,47 @@
+name: turnstile-farm
+
+on:
+  workflow_dispatch:
+    inputs:
+      host:
+        description: 'host:port'
+        required: true
+        default: '43.108.34.169:3000'
+      count:
+        description: 'akun per runner'
+        required: true
+        default: '3'
+
+permissions:
+  contents: read
+
+jobs:
+  farm:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install deps
+        run: |
+          pip install -q camoufox[geoip]
+          python -m camoufox fetch
+          sudo apt-get update -qq && sudo apt-get install -y -qq xvfb
+      - name: Farm
+        env:
+          VISION_BASE_URL: ${{ secrets.VISION_BASE_URL }}
+          VISION_MODEL: ${{ secrets.VISION_MODEL }}
+          VISION_API_KEY: ${{ secrets.VISION_API_KEY }}
+        run: xvfb-run -a python3 turnstile_farm.py "${{ github.event.inputs.host }}" "${{ github.event.inputs.count }}" "${{ matrix.shard }}"
+      - name: Upload
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tst-${{ matrix.shard }}
+          path: tst_${{ matrix.shard }}.jsonl
+          if-no-files-found: ignore
