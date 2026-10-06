@@ -1,0 +1,41 @@
+name: proxy-test
+
+on:
+  workflow_dispatch:
+    inputs:
+      url:
+        description: 'signup URL'
+        required: true
+        default: 'https://api.qilinboshi.com/sign-up'
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install
+        run: |
+          pip install -q camoufox
+          python -m camoufox fetch
+      - name: Test
+        env:
+          PROXY_LIST: ${{ secrets.PROXY_LIST }}
+        run: |
+          printf '%s' "$PROXY_LIST" > /tmp/pl.txt
+          python3 proxy_test.py "${{ github.event.inputs.url }}" "${{ matrix.shard }}"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: px-${{ matrix.shard }}
+          path: px_${{ matrix.shard }}.jsonl
+          if-no-files-found: ignore
