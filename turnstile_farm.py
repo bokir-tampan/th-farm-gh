@@ -115,7 +115,7 @@ def register_one(page, i):
         if has:
             break
         time.sleep(1)
-    token = solve_turnstile(page, timeout_s=75)
+    token = solve_turnstile(page, timeout_s=110)
     if not token:
         # DEBUG: dump state
         try:
@@ -199,7 +199,7 @@ def register_one(page, i):
 def main():
     from camoufox.sync_api import Camoufox
     ok = 0
-    with Camoufox(headless=True, humanize=True, geoip=True) as browser:
+    with Camoufox(headless=False, humanize=True, geoip=True, os="windows") as browser:
         page = browser.new_page()
         for i in range(N):
             try:
